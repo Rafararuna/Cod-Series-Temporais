@@ -1,0 +1,329 @@
+---
+title: "Trabalho Prático 1"
+author: "Rafael Santana Araruna"
+date: "01/09/2021"
+output: pdf_document
+---
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(Mcomp)
+require(tseries)
+require(forecast)
+library(magrittr)
+library(knitr)
+```
+
+## Introdução
+
+As séries temporais foram selecionadas do banco de dados da competição de previsão M3, disponibilizado no pacote Mcomp do R. Assim, acessando os dados da série S1, e plotando o seu respectivo gráfico, tem-se:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data(M3)
+id1 = 2044 #id1 da série
+s1 <- M3[[id1]]$x 
+print(s1)
+plot.ts(s1, col = 2, xlab = "Tempo", ylab = "S1")
+```
+
+Visando obter uma primeira interpretação sobre o comportamento dessa série, é realizado uma decomposição da série S1 via MSTL:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#via MSTL:
+s1 %>% mstl(lambda = "auto") %>% plot (main = "Decomposição MSTL da série S1", col = 2)
+```
+
+Analisando a decomposição acima, via MSTL, da série S1, nota-se uma tendência linear crescente, com uma pequena queda nos anos de 1985 e 1991. Além disso, é perceptível a presença de sazonalidade, pois nota-se comportamentos que se repetem ao longo do gráfico. Em relação ao ruído, aparenta ter média zero e variância constante, ou seja, a decomposição foi boa.
+
+
+## Modelo ARIMA Adequado
+
+Nessa seção, baseado na análise da decomposição feita na seção anterior, será feito a construção, manualmente, do modelo que irá interpretar a série S1.
+
+Dado que a série S1 apresenta tendência, é necessário realizar uma diferença simples sobre ela. Para ter certeza disso, é feito o seguinte:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+ndiffs(s1)
+```
+
+Note que a saída é igual a 1, ou seja, é necessário realizar uma diferença simples sobre a série.
+
+Além disso, observa-se também que a série possui sazonalidade, ou seja, é necessário aplicar uma diferença sazonal sobre a série S1. Para ter certeza disso, é feito o seguinte:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+nsdiffs(s1)
+```
+
+Note que a saída é igual a 1, ou seja, é necessário realizar uma diferença sazonal sobre a série.
+
+Portanto, aplicando a diferença simples e a diferença sazonal sobre a série S1, originando, assim, a série dsdS1, tem-se a seguinte análise visual da série:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+##Primeira Diferença:
+ds1 <- diff(s1)
+
+##diferença sazonal:
+dsds1 <- diff(ds1,lag=12)
+
+plot(dsds1, main='dsdS1', col = 2, xlab = "Tempo", ylab = "dsdS1")
+
+par(mfrow=c(1,2))
+acf(dsds1, lag =7*12, col = 2, xlab = "Lag", ylab = "ACF")
+pacf(dsds1, lag = 7*12, col = 2, xlab = "Lag", ylab = "PACF")
+```
+
+
+Olhando os gráficos acima, nota-se que a série dsdS1, com a diferença simples e com a diferença sazonal, aparenta ser estacionária. Além disso, os gráficos ACF e PACF já não mostram aquele comportamento de raiz unitária sazonal. 
+
+Agora, verifica-se se é necessária aplicar mais alguma diferença, simples ou sazonal:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+ndiffs(dsds1)
+nsdiffs(dsds1)
+```
+
+Observe que ambas as saídas acima resultaram em 0, ou seja, não é mais necessário aplicar nenhuma diferença.
+
+Aplicando o teste KPSS, verifica-se se a série dSdS1 é estacionária:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+kpss.test(dsds1)
+```
+
+A partir do resultado acima, percebe-se que a hipótese nula não foi rejeitada, então, a série é estacionária.
+
+Agora, com todas essas análises, tira-se as seguintes conclusões:
+
+* d = 1, pois foi realizado uma diferença simples;
+* D = 1, pois foi realizado uma diferença sazonal;
+* p = 2 ou 4, pois, no PACF, ambos aparentam ter autocorrelação significativa;
+* q = 0 ou 1, pois, o ACF tem "quebra" no lag 1;
+* P = 2, pois, no PACF, tem autocorrelação significativa no lag sazonal 2;
+* Q = 1, pois, no ACF, tem autocorrelação significativa no lag sazonal 1;
+
+A partir dessas conclusões, tem-se 4 modelos candidatos:
+
+* Modelo 1 - SARIMA (4,1,0) x (2,1,1);
+* Modelo 2 - SARIMA (4,1,1) x (2,1,1);
+* Modelo 3 - SARIMA (2,1,0) x (2,1,1);
+* Modelo 4 - SARIMA (2,1,1) x (2,1,1);
+
+Fazendo uma análise resisual dos quatros modelos, nota-se que:
+
+* Acerca do plot do resíduos, em todos os modelos, os resíduos apresentam um comportamento aleatório, com média zero e variância constante, típico de uma série estacionária.
+
+* Acerca dos gráficos ACF e PACF, em todos os modelos, todos os valores estão dentro da banda e próximos de zero;
+
+* Acerca do gráfico QQNORM, em todos os modelos, a maioria dos pontos estão em cima da reta, aparentando ter normalidade;
+
+Portanto, analisando graficamente, todos os modelos aparentam atender aos pressupostos, ou seja, todos eles aparentam ser bons modelos.
+
+Para verificar se eles atendem a todos os pressupostos mesmo, aplica-se os testes estatístcos, cujos resultados dos p-valores foram:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+testes1 <- data.frame(Modelo = c("Modelo 1", "Modelo 2", "Modelo 3", "Modelo 4"),
+                     KPSS = c("0,1","0,1", "0,1", "0,1"), 
+                     Ljung_Box = c("0,3682","0,591", "0,3417", "0,5152"),
+                   Shapiro_Wilk = c("0,3833","0,2328", "0,2469", "0,2068"))
+
+knitr::kable(testes1, align = 'c')
+```
+
+Analisando a tabela acima, percebe-se que todos os p-valores, em todos os testes e em todos os modelos, foram maiores que o nível de significância, cujo valor é de 0,05. Dessa forma, em nenhum teste foi rejeitado a hipótese nula, logo, todos os modelos atendem aos pressupostos de estacionariedade (teste KPSS), independência (teste Ljung-Box) e normalidade (teste de Shapiro-Wilk).
+
+Assim, escolhe-se o melhor modelo pelo critério de seleção AIC, cujo valor para cada modelo foi:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+testes <- data.frame(Medidas = c("AIC", "Estimativa do Erro Padrão"), 
+                     Modelo_1 = c("1236,44","8156"), 
+                     Modelo_2 = c("1236,88","7998"), Modelo_3 = c("1236,94","8664"),
+                     Modelo_4 = c("1235,05","8309"))
+knitr::kable(testes, align = 'c')
+```
+
+Analisando a tabela acima, fica-se em dúvida de dois modelos: ou o modelo 3, por ser o mais parcimonioso (5 parâmetros), ou seja, o que tem menos parâmetros, ou o modelo 4, por possuir o menor valor de AIC. Optando pelo critério de seleção AIC, foi escolhido o modelo 4, cujo valor do AIC é de 1235,05, como o melhor modelo para interpretar a série, ou seja, como o modelo que melhor se adequa ao banco da dados.
+
+Após a escolha do modelo, será realizado, a seguir, todas as análises feitas sobre ele, para justificar sua escolha e mostrar que ele atende a todos os pressupostos.
+
+Primeira é feito a construção do modelo:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+## Modelo 4: SARIMA (2,1,1) x (2,1,1)
+mod4 <- arima(s1, order=c(2,1,1), seasonal = c(2,1,1), include.mean = FALSE)
+mod4
+```
+
+Nessa saída, a gente nota as estimativas dos coeficientes autoregressivos, do coeficiente de médias móveis, dos coeficientes autoregressivos sazonais e do coeficiente de médias móveis sazonal, aonde todos são significativos. Além disso, tem-se as estimativas do erro padrão para cada coeficiente, o valor da variância estimada (8309), que foi o terceiro menor de todos os quatros modelos candidatos, e o valor do AIC, que foi o menor dos modelos.
+
+Depois disso, é feito um plot dos resíduos:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+par(mfrow=c(1,2))
+E <- mod4$residuals
+plot(E, col = 2, main = "Gráfico dos Resíduos", ylab = "Resíduos", xlab = "Tempo")
+E <- window(E,  start=time(s1)[13]) #Cortando os zeros:
+plot(E, col = 2, main = "Gráfico dos Resíduos", ylab = "Resíduos", xlab = "Tempo")
+```
+
+Porém, note, no gráfico da esquerda, a quantidade de zeros que ele usou pra ele inicializar o modelo, e isso ocorre pelo uso da diferença sazonal, então teve que deixar 12 pontos iguais a zero. No entanto, deixar esses zeros pode comprometer a análise de resíduos, como o pressuposto da normalidade, pois os resíduos vão estar inflacionados de zero, assim, não vai dar normalidade. Por conta disso, deve-se tirar esses zeros, até a observação 13, antes de se fazer as análises dos resíduos, como foi feito no gráfico da direita.
+
+Agora, é feito uma análise visual/gráfica dos resíduos:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+par(mfrow=c(2,2))
+plot(E, col = 2, main = "Gráfico dos Resíduos", ylab = "Resíduos", xlab = "Tempo" )
+acf(E, col = 2) #quase todos ficaram iguais a zero -> ok
+pacf(E, lag=12, ylab = "PACF", col = 2) #quase todos ficaram iguais a zero -> ok
+qqnorm(E, lag=12, col = 2) #a maioria dos pontos ficaram em cima da reta -> ok
+qqline(E)
+```
+
+A partir da figura acima, podemos dizer que:
+
+* No gráfico dos resíduos, o modelo aparente ser estacionário, pois possui média em torno de zero e variância constante, além de aparentar ter um comportamento aleatório.
+* Nos gráficos ACF e PACF, quase todos os pontos estão dentro da banda, e estão próximos de zero.
+* No gráfico QQNORM, a maioria dos pontos estão sobre a reta, ou seja, aparenta ter normalidade.
+
+Porém, para verificar o que foi dito acima, realiza-se os seguintes testes:
+
+* Teste KPSS, para verificar a estacionariedade:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+kpss.test(E)
+```
+
+Observando a saída acima, nota-se um p-valor de 0,1, que é maior que nível de significância, cujo valor é de 0,05, assim, não há evidências suficientes para rejeitar a hipótese nula, logo, a série é estacionária.
+
+* Teste Ljung-Box, para verificar a independência:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+Box.test(E, lag = 21, type ="Ljung-Box", fitdf = 6) ## use fitdf=p+q+P+Q
+```
+
+Observando a saída acima, nota-se um p-valor de 0,5152, que é maior que nível de significância, cujo valor é de 0,05, assim, não há evidências suficientes para rejeitar a hipótese nula, logo, a os resíduos são independentes.
+
+* Teste Shapiro-Wilk, para verificar a normalidade:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+shapiro.test(E)
+```
+
+Observando a saída acima, nota-se um p-valor de 0,2068, que é maior que nível de significância, cujo valor é de 0,05, assim, não há evidências suficientes para rejeitar a hipótese nula, logo, a os resíduos possuem distribuição normal.
+
+Como o modelo 4 atende a todos os pressuposto, e como ele possui o menor valor de AIC, além de ser o segundo mais parcimonioso, entre todos os modelos candidatos, esse modelo foi selecionado como o mais adequado para interpretar a série.
+
+
+## Previsão Pontual e Intervalar
+
+Para a realização da previsão, o horizonte foi de:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+M3[[id1]]$h
+```
+
+Dessa forma, considerendo uma cobertura de 90%, 95% e 99%, calcula-se as previsões intervalares e pontuais para os próximos 18 pontos a partir do seguinte código:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#PREVISAO PONTUAL:
+pre_pontual <- mod4 %>% predict(n.ahead = 18)
+
+#PREVISÃO INTERVALAR:
+pi_90 <- mod4 %>% forecast (h= 18 , level =90)
+pi_95 <- mod4 %>% forecast (h= 18 , level =95)
+pi_99 <- mod4 %>% forecast (h= 18 , level =99)
+```
+
+As previsões pontuais são:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pre_pontual <- mod4 %>% predict(n.ahead = 18)
+a <- data.frame(pre_pontual)
+names(a) <- c("Previsão Pontual", "Estimativa do Erro Padrão")
+
+knitr::kable(a, align = 'c')
+```
+
+
+
+As previsões intervalares para a cobertura de 90% é:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+a <- data.frame(pi_90)
+names(a) <- c("Previsão Pontual", "L.I (90%)", "L.S (90%)")
+
+knitr::kable(a, align = 'c')
+
+par(mfrow=c(1,1))
+plot(mod4 %>% forecast(h=18 , level=90), main = "Previsão (90%)", col = 2) 
+lines(M3[[id1]]$xx, col = "darkgreen", type = 'l', lwd=1.5)
+text(1984,5250,"---- out sample", col = "darkgreen")
+text(1983.8,5100,"---- previsão", col = 4)
+```
+
+
+
+As previsões intervalares para a cobertura de 95% é:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+a <- data.frame(pi_95)
+names(a) <- c("Previsão Pontual", "L.I (95%)", "L.S (95%)")
+
+knitr::kable(a, align = 'c')
+
+par(mfrow=c(1,1))
+plot(mod4 %>% forecast(h=18 , level=95), main = "Previsão (95%)", col = 2) 
+lines(M3[[id1]]$xx, col = "darkgreen", type = 'l', lwd=1.5)
+text(1984,5250,"---- out sample", col = "darkgreen")
+text(1983.8,5100,"---- previsão", col = 4)
+```
+
+
+
+As previsões intervalares para a cobertura de 99% é:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+a <- data.frame(pi_99)
+names(a) <- c("Previsão Pontual", "L.I (99%)", "L.S (99%)")
+
+knitr::kable(a, align = 'c')
+
+par(mfrow=c(1,1))
+plot(mod4 %>% forecast(h=18 , level=99), main = "Previsão (99%)", col = 2) 
+lines(M3[[id1]]$xx, col = "darkgreen", type = 'l', lwd=1.5)
+text(1984,5250,"---- out sample", col = "darkgreen")
+text(1983.8,5100,"---- previsão", col = 4)
+```
+
+
+Analisando as tabelas e os gráficos das três coberturas, nota-se que quanto maior a cobertura, maior é a quantidade de dados que está dentro da banda, dentro do intervalo. Isso acontece, pois quanto maior a cobertura, maior é a amplitude dos intervalos.
+
+## Acurácia
+
+Para analisar a acurácia do modelo, é necessário calcular o valor do erro absoluto médio da previsão, que é definido como  módulo da diferença entre os pontos de previsão do modelo e os pontos da parte out-sample da série, ou seja, os valores de teste, que são:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+M3[[id1]]$xx
+```
+
+Agora que sabemos os valores de teste, calcula-se o erro absoluto de previsão médio:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+MAE <- mean(abs(M3[[id1]]$xx-pre_pontual$pred))
+MAE
+```
+
+
+Agora, é feito o cálculo das porcentagens de valores do teste que estão dentro da previsão intervalar em cada nível de confiança:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+porcent_90 <- (sum(M3[[id1]]$xx>pi_90$lower&M3[[id1]]$xx<pi_90$upper)/18)*100
+porcent_95 <- (sum(M3[[id1]]$xx>pi_95$lower&M3[[id1]]$xx<pi_95$upper)/18)*100
+porcent_99 <- (sum(M3[[id1]]$xx>pi_99$lower&M3[[id1]]$xx<pi_99$upper)/18)*100
+
+a <- data.frame(Cobertura = c("90%", "95%", "99%"), 
+                Porcentagem = c("66,67%","77,78%","100%"))
+
+knitr::kable(a, align = 'c')
+```
+
+Analisando a tabela cima, percebe-se que o intervalo com 90% de cobertura contém 66,67% dos valores de teste, ou seja, dois terços do total de valores, o intervalo com 95% de cobertura contém 77,78% dos valores e o intervalo com 99% contém todos os valores. Assim, podemos confirmar o que foi dito anteriormente pela análise gráfica, que quanto maior a cobertura, maior a amplitude dos intervalos e, assim, mais valores vão estar dentro da banda.
